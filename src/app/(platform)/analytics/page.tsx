@@ -14,11 +14,12 @@ export default function AnalyticsPage() {
   const tenants = useTenants();
 
   const cumule = useMemo(() => {
-    let total = 0;
-    return (stats.data?.croissanceMensuelle ?? []).map((p) => {
-      total += p.count;
-      return { label: formatMonth(p.mois), nouveaux: p.count, cumul: total };
-    });
+    return (stats.data?.croissanceMensuelle ?? []).reduce<
+      Array<{ label: string; nouveaux: number; cumul: number }>
+    >((result, p) => {
+      const cumul = (result.at(-1)?.cumul ?? 0) + p.count;
+      return [...result, { label: formatMonth(p.mois), nouveaux: p.count, cumul }];
+    }, []);
   }, [stats.data]);
 
   const tauxActivite = useMemo(() => {

@@ -57,16 +57,14 @@ export default function PaiementsPage() {
     const tenants = data ?? [];
     const total = tenants.length;
     const actifs = tenants.filter((t) => t.actif).length;
-    const now = Date.now();
-    const thirtyDays = 30 * 86_400_000;
     let expirationSoon = 0;
     let expires = 0;
     for (const t of tenants) {
-      if (!t.dateExpiration) continue;
-      const exp = new Date(t.dateExpiration).getTime();
-      if (exp < now) {
+      const remaining = daysUntil(t.dateExpiration);
+      if (remaining === null) continue;
+      if (remaining < 0) {
         expires++;
-      } else if (exp - now < thirtyDays) {
+      } else if (remaining <= 30) {
         expirationSoon++;
       }
     }

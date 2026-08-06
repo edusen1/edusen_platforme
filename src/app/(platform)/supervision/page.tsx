@@ -166,7 +166,7 @@ export default function SupervisionPage() {
   });
 
   // ── Service detail panel ──────────────────────────────────────────
-  function ServiceDetailPanel() {
+  function renderServiceDetailPanel() {
     if (!selectedService || !system.data) return null;
 
     const sys = system.data;
@@ -938,7 +938,7 @@ export default function SupervisionPage() {
       </div>
 
       {/* Service detail panel (slide-in) */}
-      <ServiceDetailPanel />
+      {renderServiceDetailPanel()}
     </div>
   );
 }
