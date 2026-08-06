@@ -325,21 +325,27 @@ export default function SupervisionPage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div style={{ background: '#fff', border: `1px solid ${B}`, padding: 16 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>Redis</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: system.data.redis.ok ? '#16a34a' : '#dc2626', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {system.data.redis.ok ? 'Connecte' : 'Hors ligne'}
-                      <span style={{ fontSize: 11, fontWeight: 400, color: '#94a3b8' }}>{system.data.redis.latencyMs} ms</span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                  {([
+                    { label: 'Redis', ok: system.data.redis.ok, latency: system.data.redis.latencyMs, detail: 'Cache, sessions, rate limit' },
+                    { label: 'Base de donnees', ok: system.data.database.ok, latency: system.data.database.latencyMs, detail: 'PostgreSQL' },
+                    { label: 'Minio / S3', ok: system.data.minio?.ok ?? false, latency: system.data.minio?.latencyMs ?? 0, detail: system.data.minio?.configured ? `Bucket: ${system.data.minio.bucket}` : 'Non configure' },
+                    { label: 'WhatsApp Relayio', ok: system.data.whatsapp?.ok ?? false, latency: system.data.whatsapp?.latencyMs ?? 0, detail: 'OTP, notifications' },
+                  ]).map((svc) => (
+                    <div key={svc.label} style={{ background: svc.ok ? '#fff' : '#fef2f2', border: `1px solid ${svc.ok ? B : '#fecaca'}`, padding: 16 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>{svc.label}</div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: svc.ok ? '#16a34a' : '#dc2626', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {svc.ok ? (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5"><path d="M20 6 9 17l-5-5"/></svg>
+                        ) : (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                        )}
+                        {svc.ok ? 'OK' : 'KO'}
+                        <span style={{ fontSize: 11, fontWeight: 400, color: '#94a3b8' }}>{svc.latency} ms</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>{svc.detail}</div>
                     </div>
-                  </div>
-                  <div style={{ background: '#fff', border: `1px solid ${B}`, padding: 16 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>Base de donnees</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: system.data.database.ok ? '#16a34a' : '#dc2626', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {system.data.database.ok ? 'Connectee' : 'Hors ligne'}
-                      <span style={{ fontSize: 11, fontWeight: 400, color: '#94a3b8' }}>{system.data.database.latencyMs} ms</span>
-                    </div>
-                  </div>
+                  ))}
                 </div>
               </>
             ) : system.isPending ? (

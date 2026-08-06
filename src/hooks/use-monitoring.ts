@@ -64,6 +64,8 @@ export interface SystemMetrics {
   os: { platform: string; totalMemory: number; freeMemory: number; uptime: number };
   redis: { ok: boolean; latencyMs: number };
   database: { ok: boolean; latencyMs: number };
+  minio: { ok: boolean; latencyMs: number; bucket: string; configured: boolean };
+  whatsapp: { ok: boolean; latencyMs: number; provider: string; url: string };
   process: { pid: number; nodeVersion: string; uptimeSeconds: number };
   timestamp: string;
 }
