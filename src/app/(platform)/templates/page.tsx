@@ -40,6 +40,9 @@ export default function TemplatesPage() {
   const [editing, setEditing] = useState(false);
   const [editStyles, setEditStyles] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true);
@@ -59,6 +62,8 @@ export default function TemplatesPage() {
   function openDetail(t: Template) {
     setSelectedTemplate(t);
     setEditing(false);
+    setPreviewHtml(null);
+    setShowPreview(false);
     const s = (t.styles ?? {}) as Record<string, string>;
     setEditStyles({
       primaryColor: s.primaryColor ?? '#2563eb',
@@ -68,6 +73,18 @@ export default function TemplatesPage() {
       headerText: s.headerText ?? '',
       footerText: s.footerText ?? '',
     });
+  }
+
+  async function loadPreview(id: string) {
+    setLoadingPreview(true);
+    try {
+      const res = await apiClient.get(`/platform/templates/${id}/preview`);
+      setPreviewHtml((res.data as { html: string }).html);
+      setShowPreview(true);
+    } catch (err) {
+      toast.error(messageFromError(err));
+    }
+    setLoadingPreview(false);
   }
 
   async function saveStyles() {
@@ -218,6 +235,14 @@ export default function TemplatesPage() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        onClick={() => void loadPreview(selectedTemplate.id)}
+                        disabled={loadingPreview}
+                        style={{ height: 30, padding: '0 12px', border: '1px solid #d9e0e8', background: showPreview ? '#2563eb' : '#fff', color: showPreview ? '#fff' : '#334155', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4 }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        {loadingPreview ? 'Chargement...' : 'Apercu'}
+                      </button>
                       {!editing ? (
                         <button onClick={() => setEditing(true)} style={{ height: 30, padding: '0 12px', border: '1px solid #d9e0e8', background: '#fff', color: '#334155', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                           Modifier les styles
@@ -237,6 +262,32 @@ export default function TemplatesPage() {
                       )}
                     </div>
                   </div>
+
+                  {/* Preview */}
+                  {showPreview && previewHtml && (
+                    <div style={{ padding: '16px 20px', borderBottom: `1px solid ${B}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>Apercu avec donnees fictives</div>
+                        <button onClick={() => setShowPreview(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 16 }}>✕</button>
+                      </div>
+                      <div style={{
+                        border: `1px solid ${B}`,
+                        background: '#fff',
+                        height: selectedTemplate.typeDocument === 'CARTE_SCOLAIRE' ? 400 : 700,
+                        overflow: 'hidden',
+                      }}>
+                        <iframe
+                          srcDoc={previewHtml}
+                          style={{ width: '100%', height: '100%', border: 'none' }}
+                          sandbox="allow-same-origin"
+                          title="Apercu du template"
+                        />
+                      </div>
+                      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 6 }}>
+                        Les donnees affichees sont fictives — cet apercu montre le rendu du template avec des valeurs de demonstration.
+                      </div>
+                    </div>
+                  )}
 
                   {/* Styles editor */}
                   <div style={{ padding: '16px 20px' }}>
