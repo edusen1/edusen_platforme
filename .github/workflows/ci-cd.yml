@@ -20,7 +20,7 @@ jobs:
   validate:
     name: Lint and build
     runs-on: ubuntu-latest
-    environment: ${{ github.base_ref == 'main' && 'production' || github.ref_name == 'main' && 'production' || 'preproduction' }}
+    environment: preproduction
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,9 +46,9 @@ jobs:
     name: Build and publish Docker image
     needs: validate
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'production' || 'preproduction' }}
+    environment: preproduction
     env:
-      TARGET_ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'preproduction' }}
+      TARGET_ENVIRONMENT: preproduction
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -127,7 +127,7 @@ jobs:
     needs: docker
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'production' || 'preproduction' }}
+    environment: preproduction
     steps:
       - name: Trigger deployment
         shell: bash
