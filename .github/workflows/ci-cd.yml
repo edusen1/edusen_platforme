@@ -47,6 +47,8 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name == 'main' && 'production' || 'preproduction' }}
+    env:
+      TARGET_ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'preproduction' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,7 +60,7 @@ jobs:
         run: |
           echo "NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-<missing>}"
           if [ -z "$NEXT_PUBLIC_API_URL" ]; then
-            echo "::error::NEXT_PUBLIC_API_URL is missing in Settings > Environments > preproduction > Variables."
+            echo "::error::NEXT_PUBLIC_API_URL is missing in Settings > Environments > ${TARGET_ENVIRONMENT} > Variables."
             exit 1
           fi
           echo "Checking backend readiness..."
