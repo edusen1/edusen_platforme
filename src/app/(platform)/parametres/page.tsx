@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { toast } from 'sonner';
 
+import { apiClient } from '@/lib/api/client';
 import { authApi } from '@/lib/api/endpoints';
 import { messageFromError } from '@/lib/errors';
 import { useAuthStore } from '@/stores/auth-store';
@@ -236,18 +237,237 @@ export default function ParametresPage() {
         )}
 
         {/* Plateforme tab */}
-        {activeTab === 'plateforme' && (
-          <div style={{ background: '#fff', border: `1px solid ${B}`, padding: 18 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>Parametres globaux de la plateforme — non disponibles</div>
-            </div>
-            <div style={{ fontSize: 11, color: '#94a3b8' }}>
-              Branding, quotas par plan et politique de retention n&apos;ont pas encore d&apos;endpoint cote backend. Cette section sera activee des que /platform/configuration existera.
+        {activeTab === 'plateforme' && <PlateformeTab />}
+      </div>
+    </div>
+  );
+}
+
+// ─── Plateforme Tab ──────────────────────────────────────────────────────────
+
+const PLANS = ['TRIAL', 'STARTER', 'STANDARD', 'PREMIUM'];
+
+const LIMIT_KEYS = [
+  { key: 'maxEleves', label: 'Eleves max', description: 'Nombre maximum d\'eleves par ecole' },
+  { key: 'maxUsers', label: 'Utilisateurs max', description: 'Nombre total d\'utilisateurs' },
+  { key: 'maxClasses', label: 'Classes max', description: 'Nombre maximum de classes' },
+  { key: 'maxStorageMb', label: 'Stockage (Mo)', description: 'Espace de stockage en Mo' },
+  { key: 'maxBulletinsParMois', label: 'Bulletins / mois', description: 'Generations de bulletins par mois' },
+  { key: 'maxWhatsappParJour', label: 'WhatsApp / jour', description: 'Messages WhatsApp par jour' },
+];
+
+const B2 = '#e6ebf1';
+
+interface PlatformConfig {
+  plans: string[];
+  limits: Record<string, Record<string, number>>;
+  environment: {
+    nodeEnv: string;
+    redisConfigured: boolean;
+    s3Configured: boolean;
+    s3Bucket: string;
+    s3Endpoint: string | null;
+    whatsappProvider: string | null;
+    corsOrigins: string;
+    jwtIssuer: string;
+    jwtAccessTokenLifespan: string;
+  };
+}
+
+function PlateformeTab() {
+  const [config, setConfig] = useState<PlatformConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [editingCell, setEditingCell] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const fetchConfig = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiClient.get('/platform/configuration');
+      setConfig(res.data);
+    } catch (err) {
+      setError(messageFromError(err));
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { void fetchConfig(); }, [fetchConfig]);
+
+  async function saveLimit(plan: string, key: string, value: number) {
+    const cellKey = `${plan}:${key}`;
+    setSaving(cellKey);
+    try {
+      await apiClient.put(`/platform/configuration/limits/${plan}/${key}`, { value });
+      setConfig((prev) => {
+        if (!prev) return prev;
+        const limits = { ...prev.limits };
+        if (!limits[plan]) limits[plan] = {};
+        limits[plan] = { ...limits[plan], [key]: value };
+        return { ...prev, limits };
+      });
+      toast.success(`Quota mis a jour : ${plan} / ${key} = ${value}`);
+    } catch (err) {
+      toast.error(messageFromError(err));
+    }
+    setSaving(null);
+    setEditingCell(null);
+  }
+
+  function startEdit(plan: string, key: string, currentValue: number) {
+    const cellKey = `${plan}:${key}`;
+    setEditingCell(cellKey);
+    setEditValue(String(currentValue));
+  }
+
+  function commitEdit(plan: string, key: string) {
+    const val = parseInt(editValue, 10);
+    if (isNaN(val) || val < 0) {
+      toast.error('Valeur invalide');
+      return;
+    }
+    void saveLimit(plan, key, val);
+  }
+
+  if (loading) {
+    return <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>Chargement de la configuration...</div>;
+  }
+
+  if (error) {
+    return (
+      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: 18 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#991b1b', marginBottom: 4 }}>Impossible de charger la configuration</div>
+        <div style={{ fontSize: 12, color: '#b91c1c', marginBottom: 8 }}>{error}</div>
+        <button onClick={() => void fetchConfig()} style={{ height: 30, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 12, fontWeight: 600, padding: '0 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
+          Reessayer
+        </button>
+      </div>
+    );
+  }
+
+  if (!config) return null;
+
+  const env = config.environment;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Quotas par plan */}
+      <div style={{ background: '#fff', border: `1px solid ${B2}`, overflow: 'hidden' }}>
+        <div style={{ padding: '14px 18px', borderBottom: `1px solid ${B2}` }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Quotas par plan</div>
+          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Limites appliquees a chaque etablissement selon son abonnement. Cliquez sur une valeur pour la modifier.</div>
+        </div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: '#f8fafc' }}>
+              <th style={{ padding: '8px 16px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.04em' }}>Quota</th>
+              {PLANS.map((p) => (
+                <th key={p} style={{ padding: '8px 16px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.04em' }}>{p}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {LIMIT_KEYS.map((lk, i) => (
+              <tr key={lk.key} style={{ borderTop: i > 0 ? '1px solid #f1f5f9' : 'none' }}>
+                <td style={{ padding: '10px 16px' }}>
+                  <div style={{ fontWeight: 600, color: '#0f172a' }}>{lk.label}</div>
+                  <div style={{ fontSize: 10, color: '#94a3b8' }}>{lk.description}</div>
+                </td>
+                {PLANS.map((plan) => {
+                  const cellKey = `${plan}:${lk.key}`;
+                  const val = config.limits[plan]?.[lk.key] ?? 0;
+                  const isEditing = editingCell === cellKey;
+                  const isSaving = saving === cellKey;
+                  return (
+                    <td key={plan} style={{ padding: '8px 16px', textAlign: 'center' }}>
+                      {isEditing ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                          <input
+                            type="number"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') commitEdit(plan, lk.key);
+                              if (e.key === 'Escape') setEditingCell(null);
+                            }}
+                            autoFocus
+                            style={{ width: 70, height: 28, border: '1px solid #2563eb', textAlign: 'center', fontSize: 12, fontFamily: 'inherit', padding: '0 4px' }}
+                          />
+                          <button
+                            onClick={() => commitEdit(plan, lk.key)}
+                            style={{ width: 28, height: 28, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6 9 17l-5-5"/></svg>
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => startEdit(plan, lk.key, val)}
+                          disabled={isSaving}
+                          style={{
+                            background: val > 0 ? '#f0fdf4' : '#f8fafc',
+                            border: `1px solid ${val > 0 ? '#bbf7d0' : '#e2e8f0'}`,
+                            color: val > 0 ? '#16a34a' : '#94a3b8',
+                            fontWeight: 700, fontSize: 13, padding: '4px 14px',
+                            cursor: 'pointer', fontFamily: 'inherit',
+                            opacity: isSaving ? 0.5 : 1,
+                          }}
+                        >
+                          {isSaving ? '...' : val > 0 ? val.toLocaleString('fr-FR') : '—'}
+                        </button>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Environnement */}
+      <div style={{ background: '#fff', border: `1px solid ${B2}`, padding: 18 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 12 }}>Environnement</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+          <EnvRow label="Mode" value={env.nodeEnv} color={env.nodeEnv === 'production' ? '#16a34a' : '#d97706'} />
+          <EnvRow label="Redis" value={env.redisConfigured ? 'Configure' : 'Non configure'} color={env.redisConfigured ? '#16a34a' : '#dc2626'} />
+          <EnvRow label="Stockage S3" value={env.s3Configured ? 'Configure' : 'Non configure'} color={env.s3Configured ? '#16a34a' : '#dc2626'} />
+          <EnvRow label="Bucket S3" value={env.s3Bucket} />
+          <EnvRow label="WhatsApp" value={env.whatsappProvider ?? 'Non configure'} color={env.whatsappProvider ? '#16a34a' : '#94a3b8'} />
+          <EnvRow label="JWT Issuer" value={env.jwtIssuer} />
+          <EnvRow label="Token TTL" value={env.jwtAccessTokenLifespan} />
+          {env.s3Endpoint && <EnvRow label="S3 Endpoint" value={env.s3Endpoint} />}
+        </div>
+        {env.corsOrigins && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>CORS Origines autorisees</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {env.corsOrigins.split(',').filter(Boolean).map((origin) => (
+                <span key={origin} style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', background: '#f1f5f9', color: '#475569', fontFamily: 'monospace' }}>
+                  {origin.trim()}
+                </span>
+              ))}
             </div>
           </div>
         )}
       </div>
+
+      {/* Info */}
+      <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '12px 16px', fontSize: 11, color: '#1e40af', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1e40af" strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span>Les variables d&apos;environnement sont en lecture seule. Modifiez-les dans Coolify puis redeployez le backend. Les quotas sont editables directement ici.</span>
+      </div>
+    </div>
+  );
+}
+
+function EnvRow({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div style={{ padding: '6px 0' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: color ?? '#0f172a', marginTop: 1 }}>{value}</div>
     </div>
   );
 }

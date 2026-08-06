@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api/client';
 import { useTenants } from '@/hooks/use-platform';
@@ -215,8 +215,8 @@ export default function AbonnementsPage() {
                   </thead>
                   <tbody>
                     {FEATURE_MATRIX.map((cat) => (
-                      <>
-                        <tr key={cat.name}>
+                      <Fragment key={cat.name}>
+                        <tr>
                           <td colSpan={5} style={{ padding: '10px 16px', fontSize: 11, fontWeight: 700, color: '#2563eb', background: '#f8fafc', borderTop: `1px solid ${B}` }}>{cat.name}</td>
                         </tr>
                         {cat.features.map((f) => (
@@ -250,7 +250,7 @@ export default function AbonnementsPage() {
                             })}
                           </tr>
                         ))}
-                      </>
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -332,8 +332,8 @@ export default function AbonnementsPage() {
                     </thead>
                     <tbody>
                       {FEATURE_MATRIX.map((cat) => (
-                        <>
-                          <tr key={cat.name}>
+                        <Fragment key={cat.name}>
+                          <tr>
                             <td colSpan={4} style={{ padding: '8px 16px', fontSize: 11, fontWeight: 700, color: '#2563eb', background: '#f8fafc', borderTop: `1px solid ${B}` }}>{cat.name}</td>
                           </tr>
                           {cat.features.map((f) => {
@@ -372,7 +372,7 @@ export default function AbonnementsPage() {
                               </tr>
                             );
                           })}
-                        </>
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
