@@ -4,13 +4,15 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 
 import { useAuditLogs, useTenants } from '@/hooks/use-platform';
-import { formatUptime, useHealth, useReadiness, useSystemMetrics, useTenantsUsage, useSecurityMetrics, useAlerts } from '@/hooks/use-monitoring';
+import { formatUptime, useHealth, useReadiness, useSystemMetrics, useTenantsUsage, useSecurityMetrics, useAlerts, useStorageMetrics } from '@/hooks/use-monitoring';
 import { displayText, formatDateTime, formatNumber } from '@/lib/format';
 
 const B = '#e6ebf1';
 const SAMPLE_SIZE = 100;
 const IP_ATTENTION_THRESHOLD = 25;
 const SENSITIVE_ACTIONS = ['SUPPRESSION', 'CONNEXION', 'DECONNEXION', 'APPROBATION', 'REJET', 'ACTIVATION'];
+
+type ServiceId = 'api' | 'database' | 'redis' | 'minio' | 'whatsapp' | null;
 
 function ProbeCard({
   title,
@@ -55,6 +57,12 @@ function ProbeCard({
   );
 }
 
+function formatSize(mb: number): string {
+  if (mb >= 1024) return `${(mb / 1024).toFixed(2)} Go`;
+  if (mb >= 1) return `${mb.toFixed(1)} Mo`;
+  return `${Math.round(mb * 1024)} Ko`;
+}
+
 export default function SupervisionPage() {
   const health = useHealth();
   const ready = useReadiness();
@@ -62,6 +70,7 @@ export default function SupervisionPage() {
   const tenantsUsage = useTenantsUsage();
   const security = useSecurityMetrics();
   const alertsQuery = useAlerts();
+  const storageMetrics = useStorageMetrics();
   const tenants = useTenants();
   const logs = useAuditLogs({ page: 0, size: SAMPLE_SIZE });
 
@@ -70,6 +79,7 @@ export default function SupervisionPage() {
   const criticalCount = alerts.filter((a) => a.level === 'critical').length;
   const warningCount = alerts.filter((a) => a.level === 'warning').length;
   const [activeTab, setActiveTab] = useState<'alertes' | 'service' | 'etablissements' | 'securite'>('alertes');
+  const [selectedService, setSelectedService] = useState<ServiceId>(null);
 
   const tenantName = (id?: string | null) => {
     if (!id) return 'Hors etablissement';
@@ -137,6 +147,7 @@ export default function SupervisionPage() {
     tenantsUsage.refetch();
     security.refetch();
     alertsQuery.refetch();
+    storageMetrics.refetch();
     logs.refetch();
     tenants.refetch();
   };
@@ -153,6 +164,231 @@ export default function SupervisionPage() {
     cursor: 'pointer',
     fontFamily: 'inherit',
   });
+
+  // ── Service detail panel ──────────────────────────────────────────
+  function ServiceDetailPanel() {
+    if (!selectedService || !system.data) return null;
+
+    const sys = system.data;
+    const stor = storageMetrics.data;
+
+    const panelContent: Record<string, React.ReactNode> = {
+      api: (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>API Backend</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <InfoRow label="Statut" value={health.data?.ok ? 'Operationnel' : 'Hors service'} color={health.data?.ok ? '#16a34a' : '#dc2626'} />
+            <InfoRow label="Latence" value={health.data ? `${health.data.latencyMs} ms` : '—'} />
+            <InfoRow label="Uptime" value={formatUptime(health.data?.uptimeSeconds)} />
+            <InfoRow label="PID" value={String(sys.process.pid)} />
+            <InfoRow label="Node.js" value={sys.process.nodeVersion} />
+            <InfoRow label="Plateforme" value={sys.os.platform} />
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginTop: 4 }}>Memoire du processus</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+            <InfoRow label="RSS" value={`${sys.memory.rss} Mo`} />
+            <InfoRow label="Heap utilise" value={`${sys.memory.heapUsed} Mo`} />
+            <InfoRow label="Heap total" value={`${sys.memory.heapTotal} Mo`} />
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginTop: 4 }}>CPU</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <InfoRow label="Modele" value={sys.cpu.model} />
+            <InfoRow label="Coeurs" value={String(sys.cpu.cores)} />
+            <InfoRow label="Load Average" value={sys.cpu.loadAvg.join(' / ')} />
+          </div>
+        </div>
+      ),
+      database: (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>Base de donnees PostgreSQL</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <InfoRow label="Statut" value={sys.database.ok ? 'Connectee' : 'Deconnectee'} color={sys.database.ok ? '#16a34a' : '#dc2626'} />
+            <InfoRow label="Latence ping" value={`${sys.database.latencyMs} ms`} />
+            <InfoRow label="Readiness" value={ready.data?.ok ? 'OK (SELECT 1)' : 'Echec'} color={ready.data?.ok ? '#16a34a' : '#dc2626'} />
+          </div>
+          {tenantsUsage.data && tenantsUsage.data.length > 0 && (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginTop: 4 }}>Volumetrie par etablissement</div>
+              <div style={{ maxHeight: 300, overflow: 'auto' }}>
+                <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc' }}>
+                      {['Ecole', 'Eleves', 'Users', 'Inscriptions', 'Paiements'].map((h) => (
+                        <th key={h} style={{ padding: '6px 10px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#94a3b8', textAlign: 'left' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tenantsUsage.data.map((t, i) => (
+                      <tr key={t.tenantId} style={{ borderTop: i > 0 ? '1px solid #f1f5f9' : 'none' }}>
+                        <td style={{ padding: '6px 10px', fontWeight: 600, color: '#0f172a' }}>{t.nom}</td>
+                        <td style={{ padding: '6px 10px', color: '#334155' }}>{formatNumber(t.eleves)}</td>
+                        <td style={{ padding: '6px 10px', color: '#334155' }}>{formatNumber(t.users)}</td>
+                        <td style={{ padding: '6px 10px', color: '#334155' }}>{formatNumber(t.inscriptions)}</td>
+                        <td style={{ padding: '6px 10px', color: '#334155' }}>{formatNumber(t.paiements)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      ),
+      redis: (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>Redis</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <InfoRow label="Statut" value={sys.redis.ok ? 'Connecte' : 'Deconnecte'} color={sys.redis.ok ? '#16a34a' : '#dc2626'} />
+            <InfoRow label="Latence ping" value={`${sys.redis.latencyMs} ms`} />
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginTop: 4 }}>Fonctionnalites dependantes</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {[
+              { feature: 'Rate limiting (login)', status: sys.redis.ok },
+              { feature: 'Cache OTP', status: sys.redis.ok },
+              { feature: 'Sessions / lockout', status: sys.redis.ok },
+              { feature: 'Distributed locks (scheduler)', status: sys.redis.ok },
+            ].map((f) => (
+              <div key={f.feature} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                <div style={{ width: 8, height: 8, background: f.status ? '#16a34a' : '#dc2626', flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: '#334155' }}>{f.feature}</span>
+                <span style={{ fontSize: 10, color: f.status ? '#16a34a' : '#dc2626', fontWeight: 600 }}>{f.status ? 'Actif' : 'Inactif'}</span>
+              </div>
+            ))}
+          </div>
+          {!sys.redis.ok && (
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: 12, fontSize: 12, color: '#991b1b' }}>
+              Sans Redis, le rate limiting est desactive (skipOnError: true). Les tentatives de force brute ne sont pas bloquees.
+            </div>
+          )}
+        </div>
+      ),
+      minio: (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>Minio / S3 — Stockage objets</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <InfoRow label="Statut" value={sys.minio?.ok ? 'Connecte' : sys.minio?.configured ? 'Deconnecte' : 'Non configure'} color={sys.minio?.ok ? '#16a34a' : '#dc2626'} />
+            <InfoRow label="Latence" value={sys.minio?.ok ? `${sys.minio.latencyMs} ms` : '—'} />
+            <InfoRow label="Bucket" value={sys.minio?.bucket || '—'} />
+            <InfoRow label="Configure" value={sys.minio?.configured ? 'Oui' : 'Non'} />
+          </div>
+
+          {storageMetrics.isPending && (
+            <div style={{ padding: 20, textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>Calcul de la taille du stockage...</div>
+          )}
+
+          {stor && stor.configured && (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginTop: 4 }}>Utilisation du stockage</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                <div style={{ background: '#f8fafc', border: `1px solid ${B}`, padding: '10px 14px' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Taille totale</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: '#2563eb', marginTop: 2 }}>{formatSize(stor.totalSizeMb)}</div>
+                </div>
+                <div style={{ background: '#f8fafc', border: `1px solid ${B}`, padding: '10px 14px' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Objets</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a', marginTop: 2 }}>{formatNumber(stor.totalObjects)}</div>
+                </div>
+                <div style={{ background: '#f8fafc', border: `1px solid ${B}`, padding: '10px 14px' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Bucket</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', marginTop: 4, wordBreak: 'break-all' }}>{stor.bucket}</div>
+                </div>
+              </div>
+
+              {stor.byPrefix.length > 0 && (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginTop: 4 }}>Repartition par dossier</div>
+                  <div style={{ maxHeight: 260, overflow: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc' }}>
+                          {['Dossier / Tenant', 'Fichiers', 'Taille', 'Part'].map((h) => (
+                            <th key={h} style={{ padding: '6px 10px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#94a3b8', textAlign: 'left' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stor.byPrefix.map((p, i) => {
+                          const pct = stor.totalSizeBytes > 0 ? Math.round((p.sizeBytes / stor.totalSizeBytes) * 100) : 0;
+                          const tName = tenants.data?.find((t) => t.id === p.prefix)?.nom;
+                          return (
+                            <tr key={p.prefix} style={{ borderTop: i > 0 ? '1px solid #f1f5f9' : 'none' }}>
+                              <td style={{ padding: '6px 10px', fontWeight: 600, color: '#0f172a' }}>
+                                {tName ?? p.prefix}
+                                {tName && <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 400, fontFamily: 'monospace' }}>{p.prefix.slice(0, 12)}...</div>}
+                              </td>
+                              <td style={{ padding: '6px 10px', color: '#334155' }}>{formatNumber(p.objects)}</td>
+                              <td style={{ padding: '6px 10px', color: '#334155' }}>{formatSize(p.sizeMb)}</td>
+                              <td style={{ padding: '6px 10px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <div style={{ width: 60, height: 5, background: '#e6ebf1', overflow: 'hidden' }}>
+                                    <div style={{ width: `${pct}%`, height: '100%', background: '#4f46e5' }} />
+                                  </div>
+                                  <span style={{ fontSize: 10, color: '#94a3b8' }}>{pct}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {stor && !stor.configured && (
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: 12, fontSize: 12, color: '#92400e' }}>
+              Le stockage S3 n&apos;est pas configure. Definissez S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY et S3_BUCKET.
+            </div>
+          )}
+        </div>
+      ),
+      whatsapp: (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>WhatsApp Relayio</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <InfoRow label="Statut" value={sys.whatsapp?.ok ? 'Connecte' : 'Deconnecte'} color={sys.whatsapp?.ok ? '#16a34a' : '#dc2626'} />
+            <InfoRow label="Latence" value={sys.whatsapp?.ok ? `${sys.whatsapp.latencyMs} ms` : '—'} />
+            <InfoRow label="Provider" value={sys.whatsapp?.provider ?? '—'} />
+            <InfoRow label="URL" value={sys.whatsapp?.url ?? '—'} />
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginTop: 4 }}>Fonctionnalites dependantes</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {[
+              { feature: 'OTP par WhatsApp', status: sys.whatsapp?.ok },
+              { feature: 'Notifications parents', status: sys.whatsapp?.ok },
+              { feature: 'Diffusion messages', status: sys.whatsapp?.ok },
+            ].map((f) => (
+              <div key={f.feature} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                <div style={{ width: 8, height: 8, background: f.status ? '#16a34a' : '#dc2626', flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: '#334155' }}>{f.feature}</span>
+                <span style={{ fontSize: 10, color: f.status ? '#16a34a' : '#dc2626', fontWeight: 600 }}>{f.status ? 'Actif' : 'Inactif'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ),
+    };
+
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', justifyContent: 'flex-end' }} onClick={(e) => { if (e.target === e.currentTarget) setSelectedService(null); }}>
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.3)' }} />
+        <div style={{ position: 'relative', width: 560, maxWidth: '90vw', height: '100%', background: '#fff', boxShadow: '-8px 0 30px rgba(0,0,0,.12)', overflow: 'auto' }}>
+          {/* Panel header */}
+          <div style={{ padding: '16px 20px', borderBottom: `1px solid ${B}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Detail du service</span>
+            <button onClick={() => setSelectedService(null)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+          </div>
+          <div style={{ padding: 20 }}>
+            {panelContent[selectedService] ?? null}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
@@ -194,8 +430,8 @@ export default function SupervisionPage() {
         <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${B}`, marginBottom: 16 }}>
           <button style={tabStyle(activeTab === 'alertes')} onClick={() => setActiveTab('alertes')}>
             Alertes
-            {criticalCount > 0 && <span style={{ marginLeft: 6, background: '#dc2626', color: '#fff', fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 8 }}>{criticalCount}</span>}
-            {criticalCount === 0 && warningCount > 0 && <span style={{ marginLeft: 6, background: '#f59e0b', color: '#fff', fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 8 }}>{warningCount}</span>}
+            {criticalCount > 0 && <span style={{ marginLeft: 6, background: '#dc2626', color: '#fff', fontSize: 10, fontWeight: 700, padding: '1px 6px' }}>{criticalCount}</span>}
+            {criticalCount === 0 && warningCount > 0 && <span style={{ marginLeft: 6, background: '#f59e0b', color: '#fff', fontSize: 10, fontWeight: 700, padding: '1px 6px' }}>{warningCount}</span>}
           </button>
           <button style={tabStyle(activeTab === 'service')} onClick={() => setActiveTab('service')}>Service</button>
           <button style={tabStyle(activeTab === 'etablissements')} onClick={() => setActiveTab('etablissements')}>Etablissements</button>
@@ -270,18 +506,22 @@ export default function SupervisionPage() {
         {activeTab === 'service' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-              <ProbeCard
-                title="API"
-                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>}
-                probe={health.data}
-                isPending={health.isPending}
-              />
-              <ProbeCard
-                title="Base de donnees"
-                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>}
-                probe={ready.data}
-                isPending={ready.isPending}
-              />
+              <div onClick={() => setSelectedService('api')} style={{ cursor: 'pointer' }}>
+                <ProbeCard
+                  title="API"
+                  icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>}
+                  probe={health.data}
+                  isPending={health.isPending}
+                />
+              </div>
+              <div onClick={() => setSelectedService('database')} style={{ cursor: 'pointer' }}>
+                <ProbeCard
+                  title="Base de donnees"
+                  icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>}
+                  probe={ready.data}
+                  isPending={ready.isPending}
+                />
+              </div>
               <div style={{ background: '#fff', border: `1px solid ${B}`, padding: '14px 16px' }}>
                 <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -325,14 +565,22 @@ export default function SupervisionPage() {
                   </div>
                 </div>
 
+                {/* Service cards — clickable */}
+                <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: -6 }}>Cliquez sur un service pour voir les details</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
                   {([
-                    { label: 'Redis', ok: system.data.redis.ok, latency: system.data.redis.latencyMs, detail: 'Cache, sessions, rate limit' },
-                    { label: 'Base de donnees', ok: system.data.database.ok, latency: system.data.database.latencyMs, detail: 'PostgreSQL' },
-                    { label: 'Minio / S3', ok: system.data.minio?.ok ?? false, latency: system.data.minio?.latencyMs ?? 0, detail: system.data.minio?.configured ? `Bucket: ${system.data.minio.bucket}` : 'Non configure' },
-                    { label: 'WhatsApp Relayio', ok: system.data.whatsapp?.ok ?? false, latency: system.data.whatsapp?.latencyMs ?? 0, detail: 'OTP, notifications' },
+                    { id: 'redis' as ServiceId, label: 'Redis', ok: system.data.redis.ok, latency: system.data.redis.latencyMs, detail: 'Cache, sessions, rate limit' },
+                    { id: 'database' as ServiceId, label: 'Base de donnees', ok: system.data.database.ok, latency: system.data.database.latencyMs, detail: 'PostgreSQL' },
+                    { id: 'minio' as ServiceId, label: 'Minio / S3', ok: system.data.minio?.ok ?? false, latency: system.data.minio?.latencyMs ?? 0, detail: system.data.minio?.configured ? `Bucket: ${system.data.minio.bucket}` : 'Non configure' },
+                    { id: 'whatsapp' as ServiceId, label: 'WhatsApp Relayio', ok: system.data.whatsapp?.ok ?? false, latency: system.data.whatsapp?.latencyMs ?? 0, detail: 'OTP, notifications' },
                   ]).map((svc) => (
-                    <div key={svc.label} style={{ background: svc.ok ? '#fff' : '#fef2f2', border: `1px solid ${svc.ok ? B : '#fecaca'}`, padding: 16 }}>
+                    <div
+                      key={svc.label}
+                      onClick={() => setSelectedService(svc.id)}
+                      style={{ background: svc.ok ? '#fff' : '#fef2f2', border: `1px solid ${svc.ok ? B : '#fecaca'}`, padding: 16, cursor: 'pointer', transition: 'box-shadow .15s' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,.08)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.boxShadow = 'none')}
+                    >
                       <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>{svc.label}</div>
                       <div style={{ fontSize: 16, fontWeight: 800, color: svc.ok ? '#16a34a' : '#dc2626', display: 'flex', alignItems: 'center', gap: 6 }}>
                         {svc.ok ? (
@@ -344,9 +592,39 @@ export default function SupervisionPage() {
                         <span style={{ fontSize: 11, fontWeight: 400, color: '#94a3b8' }}>{svc.latency} ms</span>
                       </div>
                       <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>{svc.detail}</div>
+                      <div style={{ fontSize: 10, color: '#2563eb', marginTop: 6, fontWeight: 600 }}>Voir details →</div>
                     </div>
                   ))}
                 </div>
+
+                {/* Storage summary */}
+                {storageMetrics.data && storageMetrics.data.configured && (
+                  <div
+                    onClick={() => setSelectedService('minio')}
+                    style={{ background: '#fff', border: `1px solid ${B}`, padding: 18, cursor: 'pointer' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,.08)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.boxShadow = 'none')}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>Stockage objets (Minio)</div>
+                      <span style={{ fontSize: 10, color: '#2563eb', fontWeight: 600 }}>Voir details →</span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Taille totale</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: '#2563eb', marginTop: 2 }}>{formatSize(storageMetrics.data.totalSizeMb)}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Fichiers</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', marginTop: 2 }}>{formatNumber(storageMetrics.data.totalObjects)}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Dossiers</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: '#7c3aed', marginTop: 2 }}>{storageMetrics.data.byPrefix.length}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </>
             ) : system.isPending ? (
               <div style={{ background: '#fff', border: `1px solid ${B}`, padding: '30px 18px', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
@@ -659,7 +937,17 @@ export default function SupervisionPage() {
         )}
       </div>
 
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      {/* Service detail panel (slide-in) */}
+      <ServiceDetailPanel />
+    </div>
+  );
+}
+
+function InfoRow({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div style={{ padding: '6px 0' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: color ?? '#0f172a', marginTop: 1, wordBreak: 'break-all' }}>{value}</div>
     </div>
   );
 }
