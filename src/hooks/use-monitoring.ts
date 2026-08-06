@@ -132,6 +132,28 @@ export function useSecurityMetrics() {
   });
 }
 
+export interface StorageMetrics {
+  totalObjects: number;
+  totalSizeBytes: number;
+  totalSizeMb: number;
+  totalSizeGb: number;
+  bucket: string;
+  configured: boolean;
+  byPrefix: { prefix: string; objects: number; sizeBytes: number; sizeMb: number }[];
+}
+
+export function useStorageMetrics() {
+  return useQuery<StorageMetrics>({
+    queryKey: ['monitoring', 'storage'],
+    queryFn: async () => {
+      const res = await apiClient.get('/platform/monitoring/storage');
+      return res.data;
+    },
+    refetchInterval: 120_000,
+    retry: false,
+  });
+}
+
 export interface Alert {
   level: 'critical' | 'warning' | 'info';
   category: string;
