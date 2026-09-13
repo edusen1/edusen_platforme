@@ -98,14 +98,14 @@ export function PlatformSidebar({
       >
         {/* Logo */}
         {collapsed ? (
-          <div style={{ width: 36, height: 36, flexShrink: 0, overflow: 'hidden' }}>
+          <div style={{ width: 36, height: 36, flexShrink: 0 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Edusen" style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
+            <img src="/favicon.png" alt="Edusen" style={{ width: 40, height: 40, objectFit: 'contain' }} />
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Edusen" style={{ height: 30, objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
+            <img src="/logo.png" alt="Edusen" style={{ height: 36, objectFit: 'contain' }} />
             <span style={{ color: '#60a5fa', fontSize: 10, fontWeight: 700, letterSpacing: '.08em' }}>PLATEFORME</span>
           </div>
         )}
