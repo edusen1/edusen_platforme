@@ -160,6 +160,6 @@ jobs:
           fi
 
           curl --fail-with-body --silent --show-error \
-            --request GET "${COOLIFY_BASE_URL%/}/api/v1/deploy?uuid=${COOLIFY_APP_UUID}" \
+            --request POST "${COOLIFY_BASE_URL%/}/api/v1/deploy?uuid=${COOLIFY_APP_UUID}" \
             -H "Authorization: Bearer $COOLIFY_TOKEN" \
             -H "Content-Type: application/json"
