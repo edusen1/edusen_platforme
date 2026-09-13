@@ -113,7 +113,7 @@ export default function LoginPage() {
         {/* Logo top-left */}
         <div style={{ position: 'absolute', left: 0, right: 0, top: 0, padding: '36px', display: 'flex', alignItems: 'center', gap: '12px' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="Edusen" style={{ height: 52, objectFit: 'contain' }} />
+          <img src="/logo-white.png" alt="Edusen" style={{ height: 52, objectFit: 'contain' }} />
           <span style={{ background: 'rgba(255,255,255,.12)', padding: '2px 8px', fontSize: 10, fontWeight: 600, color: '#fff', letterSpacing: '.08em' }}>PLATEFORME</span>
         </div>
 

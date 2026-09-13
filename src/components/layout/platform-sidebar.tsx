@@ -105,7 +105,7 @@ export function PlatformSidebar({
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Edusen" style={{ height: 36, objectFit: 'contain' }} />
+            <img src="/logo-white.png" alt="Edusen" style={{ height: 36, objectFit: 'contain' }} />
             <span style={{ color: '#60a5fa', fontSize: 10, fontWeight: 700, letterSpacing: '.08em' }}>PLATEFORME</span>
           </div>
         )}
