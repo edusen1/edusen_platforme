@@ -147,15 +147,27 @@ jobs:
       - name: Trigger deployment
         shell: bash
         env:
-          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
+          COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_WEBHOOK }}
+          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL || 'http://185.182.9.36:8000' }}
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
         run: |
-          if [ -z "$COOLIFY_BASE_URL" ]; then
-            echo "::error::COOLIFY_BASE_URL is missing."
+          if [ -n "$COOLIFY_WEBHOOK" ]; then
+            headers=(-H "Content-Type: application/json")
+            if [ -n "$COOLIFY_TOKEN" ]; then
+              headers+=(-H "Authorization: Bearer $COOLIFY_TOKEN")
+            fi
+            curl --fail-with-body --silent --show-error \
+              --request POST "$COOLIFY_WEBHOOK" \
+              "${headers[@]}"
+            exit 0
+          fi
+
+          if [ -z "$COOLIFY_TOKEN" ]; then
+            echo "::error::Either COOLIFY_WEBHOOK or COOLIFY_TOKEN is required."
             exit 1
           fi
-          if [ -z "$COOLIFY_TOKEN" ]; then
-            echo "::error::COOLIFY_TOKEN is missing."
+          if [ -z "$COOLIFY_BASE_URL" ]; then
+            echo "::error::COOLIFY_BASE_URL is missing."
             exit 1
           fi
 
