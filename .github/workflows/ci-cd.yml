@@ -1,6 +1,7 @@
 name: CI/CD
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main, preprod]
   push:
@@ -15,6 +16,8 @@ concurrency:
 
 env:
   IMAGE_NAME: edusen_plateforme
+  NEXT_PUBLIC_API_URL: https://edusen-api.minifootapp.com/api
+  COOLIFY_APP_UUID: a50jk1ljoxttgcydqly8pszz
 
 jobs:
   validate:
@@ -39,8 +42,6 @@ jobs:
 
       - name: Build
         run: npm run build
-        env:
-          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || secrets.NEXT_PUBLIC_API_URL }}
 
   docker:
     name: Build and publish Docker image
@@ -55,12 +56,10 @@ jobs:
 
       - name: Verify platform API configuration
         shell: bash
-        env:
-          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || secrets.NEXT_PUBLIC_API_URL }}
         run: |
-          echo "NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-<missing>}"
+          echo "NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}"
           if [ -z "$NEXT_PUBLIC_API_URL" ]; then
-            echo "::error::NEXT_PUBLIC_API_URL is missing in Settings > Environments > ${TARGET_ENVIRONMENT} > Variables."
+            echo "::error::NEXT_PUBLIC_API_URL is missing."
             exit 1
           fi
           echo "Checking backend readiness..."
@@ -120,7 +119,7 @@ jobs:
           push: false
           tags: ${{ env.IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}
           build-args: |
-            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || secrets.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_API_URL=${{ env.NEXT_PUBLIC_API_URL }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -134,7 +133,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || secrets.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_API_URL=${{ env.NEXT_PUBLIC_API_URL }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -148,19 +147,19 @@ jobs:
       - name: Trigger deployment
         shell: bash
         env:
-          COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_WEBHOOK }}
+          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
         run: |
-          if [ -z "$COOLIFY_WEBHOOK" ]; then
-            echo "The Coolify webhook for this branch is not configured."
+          if [ -z "$COOLIFY_BASE_URL" ]; then
+            echo "::error::COOLIFY_BASE_URL is missing."
+            exit 1
+          fi
+          if [ -z "$COOLIFY_TOKEN" ]; then
+            echo "::error::COOLIFY_TOKEN is missing."
             exit 1
           fi
 
-          headers=(-H "Content-Type: application/json")
-          if [ -n "$COOLIFY_TOKEN" ]; then
-            headers+=(-H "Authorization: Bearer $COOLIFY_TOKEN")
-          fi
-
           curl --fail-with-body --silent --show-error \
-            --request GET "$COOLIFY_WEBHOOK" \
-            "${headers[@]}"
+            --request GET "${COOLIFY_BASE_URL%/}/api/v1/deploy?uuid=${COOLIFY_APP_UUID}" \
+            -H "Authorization: Bearer $COOLIFY_TOKEN" \
+            -H "Content-Type: application/json"
