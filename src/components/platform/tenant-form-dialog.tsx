@@ -41,11 +41,13 @@ export function TenantFormDialog({
   onOpenChange: (v: boolean) => void;
   tenant?: Tenant | null;
   isSubmitting: boolean;
-  onSubmit: (payload: TenantPayload) => void;
+  onSubmit: (payload: TenantPayload, logoFile: File | null) => void;
 }) {
   const isEdit = Boolean(tenant);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [logoPreview, setLogoPreview] = useState<string>('');
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoCleared, setLogoCleared] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -66,37 +68,42 @@ export function TenantFormDialog({
       initialAdminTelephone: '',
     });
     setLogoPreview(tenant?.logoUrl ?? '');
+    setLogoFile(null);
+    setLogoCleared(false);
   }, [open, tenant, form]);
 
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) return;
-    const reader = new FileReader();
-    reader.onload = () => setLogoPreview(reader.result as string);
-    reader.readAsDataURL(file);
+    setLogoFile(file);
+    setLogoCleared(false);
+    setLogoPreview(URL.createObjectURL(file));
   };
 
   const submit = (values: FormValues) => {
     const clean = <T,>(v: T | '' | undefined): T | undefined =>
       v === '' || v === undefined ? undefined : v;
     const months = values.durationMonths ? Number(values.durationMonths) : undefined;
-    onSubmit({
-      nom: values.nom,
-      slug: clean(values.slug),
-      emailContact: clean(values.emailContact),
-      telephone: clean(values.telephone),
-      adresse: clean(values.adresse),
-      logoUrl: logoPreview || undefined,
-      plan: clean(values.plan),
-      durationMonths: months,
-      ...(isEdit
-        ? {}
-        : {
-            initialAdminEmail: clean(values.initialAdminEmail),
-            initialAdminTelephone: clean(values.initialAdminTelephone),
-          }),
-    });
+    onSubmit(
+      {
+        nom: values.nom,
+        slug: clean(values.slug),
+        emailContact: clean(values.emailContact),
+        telephone: clean(values.telephone),
+        adresse: clean(values.adresse),
+        ...(logoFile ? {} : logoCleared ? { logoUrl: null } : {}),
+        plan: clean(values.plan),
+        durationMonths: months,
+        ...(isEdit
+          ? {}
+          : {
+              initialAdminEmail: clean(values.initialAdminEmail),
+              initialAdminTelephone: clean(values.initialAdminTelephone),
+            }),
+      },
+      logoFile,
+    );
   };
 
   if (!open) return null;
@@ -134,7 +141,7 @@ export function TenantFormDialog({
                   Choisir une image
                 </button>
                 {logoPreview && (
-                  <button type="button" onClick={() => setLogoPreview('')} style={{ height: 26, padding: '0 10px', border: '1px solid #fee2e2', background: '#fff', color: '#dc2626', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' }}>
+                  <button type="button" onClick={() => { setLogoPreview(''); setLogoFile(null); setLogoCleared(true); }} style={{ height: 26, padding: '0 10px', border: '1px solid #fee2e2', background: '#fff', color: '#dc2626', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' }}>
                     Supprimer
                   </button>
                 )}

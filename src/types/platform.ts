@@ -26,7 +26,7 @@ export interface TenantPayload {
   emailContact?: string;
   telephone?: string;
   adresse?: string;
-  logoUrl?: string;
+  logoUrl?: string | null;
   plan?: TenantPlan;
   durationMonths?: number;
   initialAdminEmail?: string;

@@ -1,11 +1,13 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 
 import { TenantFormDialog } from '@/components/platform/tenant-form-dialog';
 import { ConfirmDialog } from '@/components/platform/confirm-dialog';
-import { useArchiveTenant, useCreateTenant, useTenants, useUpdateTenant } from '@/hooks/use-platform';
+import { useArchiveTenant, useCreateTenant, useTenants, useUpdateTenant, qk } from '@/hooks/use-platform';
+import { tenantsApi } from '@/lib/api/endpoints';
 import { useIsSuperAdmin } from '@/stores/auth-store';
 import { formatDate, daysUntil } from '@/lib/format';
 import type { Tenant, TenantPayload } from '@/types/platform';
@@ -67,6 +69,7 @@ export default function TenantsPage() {
   const [editing, setEditing] = useState<Tenant | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<Tenant | null>(null);
 
+  const qc = useQueryClient();
   const isSuperAdmin = useIsSuperAdmin();
   const { data, isPending, isError, error, refetch, isFetching } = useTenants();
 
@@ -92,11 +95,23 @@ export default function TenantsPage() {
     });
   }, [data, search, status, plan]);
 
-  const handleSubmit = (payload: TenantPayload) => {
-    if (editing) {
-      updateTenant.mutate(payload, { onSuccess: () => setFormOpen(false) });
-    } else {
-      createTenant.mutate(payload, { onSuccess: () => setFormOpen(false) });
+  const handleSubmit = async (payload: TenantPayload, logoFile: File | null) => {
+    try {
+      let tenantId: string;
+      if (editing) {
+        await updateTenant.mutateAsync(payload);
+        tenantId = editing.id;
+      } else {
+        const created = await createTenant.mutateAsync(payload);
+        tenantId = created.id;
+      }
+      if (logoFile) {
+        await tenantsApi.uploadLogo(tenantId, logoFile);
+        qc.invalidateQueries({ queryKey: qk.tenants });
+      }
+      setFormOpen(false);
+    } catch {
+      // errors handled by hook onError
     }
   };
 
